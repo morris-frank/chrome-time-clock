@@ -1,13 +1,15 @@
-#!/usr/bin/env python3
 """Infer approximate workday start/end from Chrome browser history."""
 
 import argparse
 import csv
+import os
 import shutil
 import sqlite3
+import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 from zoneinfo import ZoneInfo
 
 # Chrome/WebKit epoch: microseconds since 1601-01-01 00:00 UTC
@@ -26,37 +28,56 @@ WARN_EARLIEST_HOUR = 5
 WARN_LATEST_HOUR_MINUTE = (23, 30)
 
 
-# ---------------------------------------------------------------------------
-# Path resolution
-# ---------------------------------------------------------------------------
-
-def resolve_history_path(browser: str, profile: str, history_db: str | None) -> Path:
+def resolve_history_path(browser: str, profile: str, history_db: Optional[Union[str, Path]]) -> Path:
+    """Resolve the path to the browser history database based on OS and browser."""
     if history_db:
         return Path(history_db).expanduser()
-    roots = {
-        "chrome": Path.home() / "Library/Application Support/Google/Chrome",
-        "chromium": Path.home() / "Library/Application Support/Chromium",
-        "brave": Path.home() / "Library/Application Support/BraveSoftware/Brave-Browser",
-    }
-    root = roots.get(browser.lower())
+
+    home = Path.home()
+    browser_lower = browser.lower()
+
+    if sys.platform == "darwin":  # macOS
+        roots = {
+            "chrome": home / "Library/Application Support/Google/Chrome",
+            "chromium": home / "Library/Application Support/Chromium",
+            "brave": home / "Library/Application Support/BraveSoftware/Brave-Browser",
+        }
+    elif sys.platform == "win32":  # Windows
+        local_app_data = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
+        roots = {
+            "chrome": local_app_data / "Google/Chrome/User Data",
+            "chromium": local_app_data / "Chromium/User Data",
+            "brave": local_app_data / "BraveSoftware/Brave-Browser/User Data",
+        }
+    else:  # Linux / other Unix
+        roots = {
+            "chrome": home / ".config/google-chrome",
+            "chromium": home / ".config/chromium",
+            "brave": home / ".config/BraveSoftware/Brave-Browser",
+        }
+
+    root = roots.get(browser_lower)
     if root is None:
-        raise ValueError(f"Unknown browser '{browser}'. Use --history-db for a custom path.")
+        raise ValueError(
+            f"Unknown browser '{browser}' on platform '{sys.platform}'. "
+            f"Supported browsers: chrome, chromium, brave. Or use --history-db for a custom path."
+        )
     return root / profile / "History"
 
 
 def copy_history_db(src: Path) -> Path:
+    """Copy the history database to a temporary location to avoid locking issues."""
     if not src.exists():
         raise FileNotFoundError(f"History DB not found: {src}")
-    tmp = Path(tempfile.mkdtemp()) / "History"
-    shutil.copy2(src, tmp)
-    return tmp
+    tmp_dir = Path(tempfile.mkdtemp())
+    tmp_file = tmp_dir / "History"
+    shutil.copy2(src, tmp_file)
+    return tmp_file
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
-def read_visits(db_path: Path) -> list[dict]:
+def read_visits(db_path: Path) -> List[Dict[str, Any]]:
+    """Read visit records from the SQLite history database."""
+    # Use read-only mode to prevent database modification
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         cur = con.execute(
@@ -82,10 +103,12 @@ def read_visits(db_path: Path) -> list[dict]:
 
 
 def chrome_time_to_datetime(value: int) -> datetime:
+    """Convert Chrome WebKit microsecond timestamp to timezone-aware datetime."""
     return CHROME_EPOCH + timedelta(microseconds=value)
 
 
-def convert_times(visits: list[dict], tz: ZoneInfo) -> list[dict]:
+def convert_times(visits: List[Dict[str, Any]], tz: ZoneInfo) -> List[Dict[str, Any]]:
+    """Convert raw timestamps to local datetimes and dates."""
     out = []
     for v in visits:
         dt_utc = chrome_time_to_datetime(v["visit_time"])
@@ -94,16 +117,13 @@ def convert_times(visits: list[dict], tz: ZoneInfo) -> list[dict]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Filtering
-# ---------------------------------------------------------------------------
-
 def filter_visits(
-    visits: list[dict],
-    ignore_schemes: tuple[str, ...] = INTERNAL_SCHEMES,
-    date_from: date | None = None,
-    date_to: date | None = None,
-) -> list[dict]:
+    visits: List[Dict[str, Any]],
+    ignore_schemes: Tuple[str, ...] = INTERNAL_SCHEMES,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> List[Dict[str, Any]]:
+    """Filter out internal browser schemes and restrict to date range."""
     out = []
     for v in visits:
         url = v["url"]
@@ -118,12 +138,8 @@ def filter_visits(
     return out
 
 
-# ---------------------------------------------------------------------------
-# Block clustering and daily aggregation
-# ---------------------------------------------------------------------------
-
-def compute_blocks(day_visits: list[dict], gap_minutes: int) -> list[dict]:
-    """Return list of blocks for a single day's visits (already sorted)."""
+def compute_blocks(day_visits: List[Dict[str, Any]], gap_minutes: int) -> List[Dict[str, Any]]:
+    """Cluster visits into active blocks separated by inactivity gaps."""
     if not day_visits:
         return []
     threshold = timedelta(minutes=gap_minutes)
@@ -148,18 +164,18 @@ def compute_blocks(day_visits: list[dict], gap_minutes: int) -> list[dict]:
 
 
 def group_daily(
-    visits: list[dict], gap_minutes: int
-) -> tuple[list[dict], list[dict]]:
-    # Group visits by local date
-    by_day: dict = {}
+    visits: List[Dict[str, Any]], gap_minutes: int
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Group visits by day and compute daily summaries and block intervals."""
+    by_day: Dict[date, List[Dict[str, Any]]] = {}
     for v in visits:
         by_day.setdefault(v["date_local"], []).append(v)
 
     daily_rows = []
     block_rows = []
 
-    for date in sorted(by_day):
-        day_visits = sorted(by_day[date], key=lambda x: x["timestamp_local"])
+    for d in sorted(by_day):
+        day_visits = sorted(by_day[d], key=lambda x: x["timestamp_local"])
         blocks = compute_blocks(day_visits, gap_minutes)
 
         first_seen = day_visits[0]["timestamp_local"]
@@ -173,7 +189,7 @@ def group_daily(
 
         daily_rows.append(
             {
-                "date": date.isoformat(),
+                "date": d.isoformat(),
                 "first_seen": first_seen.strftime("%H:%M"),
                 "last_seen": last_seen.strftime("%H:%M"),
                 "gross_span_hours": round(gross_span, 2),
@@ -189,7 +205,7 @@ def group_daily(
             dur = (b["end"] - b["start"]).total_seconds() / 3600
             block_rows.append(
                 {
-                    "date": date.isoformat(),
+                    "date": d.isoformat(),
                     "block_start": b["start"].strftime("%H:%M"),
                     "block_end": b["end"].strftime("%H:%M"),
                     "duration_hours": round(dur, 2),
@@ -200,18 +216,16 @@ def group_daily(
     return daily_rows, block_rows
 
 
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
-
-def write_csv(rows: list[dict], path: Path, fieldnames: list[str]) -> None:
+def write_csv(rows: List[Dict[str, Any]], path: Path, fieldnames: List[str]) -> None:
+    """Write rows to a CSV file."""
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
 
-def write_markdown(daily_rows: list[dict], path: Path) -> None:
+def write_markdown(daily_rows: List[Dict[str, Any]], path: Path) -> None:
+    """Write daily summaries to a Markdown table file."""
     lines = [
         "# Chrome Work Hours Summary",
         "",
@@ -229,29 +243,61 @@ def write_markdown(daily_rows: list[dict], path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Validation warnings
-# ---------------------------------------------------------------------------
-
-def emit_warnings(daily_rows: list[dict]) -> None:
+def emit_warnings(daily_rows: List[Dict[str, Any]]) -> List[str]:
+    """Check daily rows for potential anomalies and return a list of warning strings."""
     warn_late_h, warn_late_m = WARN_LATEST_HOUR_MINUTE
+    warnings = []
     for r in daily_rows:
-        date = r["date"]
+        d_str = r["date"]
         if r["n_visits"] < WARN_MIN_VISITS_PER_DAY:
-            print(f"  WARN {date}: only {r['n_visits']} visits (< {WARN_MIN_VISITS_PER_DAY})")
+            warnings.append(f"WARN {d_str}: only {r['n_visits']} visits (< {WARN_MIN_VISITS_PER_DAY})")
         if r["gross_span_hours"] > WARN_MAX_SPAN_HOURS:
-            print(f"  WARN {date}: gross span {r['gross_span_hours']:.1f} h > {WARN_MAX_SPAN_HOURS} h")
+            warnings.append(f"WARN {d_str}: gross span {r['gross_span_hours']:.1f} h > {WARN_MAX_SPAN_HOURS} h")
         first_h = r["_first_dt"].hour
         if first_h < WARN_EARLIEST_HOUR:
-            print(f"  WARN {date}: first visit at {r['first_seen']} (before 0{WARN_EARLIEST_HOUR}:00)")
+            warnings.append(f"WARN {d_str}: first visit at {r['first_seen']} (before 0{WARN_EARLIEST_HOUR}:00)")
         last_dt = r["_last_dt"]
         if (last_dt.hour, last_dt.minute) > (warn_late_h, warn_late_m):
-            print(f"  WARN {date}: last visit at {r['last_seen']} (after {warn_late_h}:{warn_late_m:02d})")
+            warnings.append(f"WARN {d_str}: last visit at {r['last_seen']} (after {warn_late_h}:{warn_late_m:02d})")
+    return warnings
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+def extract_workhours(
+    browser: str = "chrome",
+    profile: str = DEFAULT_PROFILE,
+    history_db: Optional[Union[str, Path]] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    timezone_str: str = DEFAULT_TIMEZONE,
+    gap_minutes: int = DEFAULT_GAP_MINUTES,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+    """
+    Programmatic API to extract work hours from browser history.
+    
+    Returns:
+        Tuple of (daily_rows, block_rows, warnings)
+    """
+    tz = ZoneInfo(timezone_str)
+    src = resolve_history_path(browser, profile, history_db)
+    tmp_db = copy_history_db(src)
+
+    try:
+        raw = read_visits(tmp_db)
+        converted = convert_times(raw, tz)
+        filtered = filter_visits(converted, date_from=date_from, date_to=date_to)
+        
+        if not filtered:
+            return [], [], []
+
+        daily_rows, block_rows = group_daily(filtered, gap_minutes)
+        warnings = emit_warnings(daily_rows)
+        return daily_rows, block_rows, warnings
+    finally:
+        try:
+            shutil.rmtree(tmp_db.parent, ignore_errors=True)
+        except OSError:
+            pass
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -272,8 +318,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    tz = ZoneInfo(args.timezone)
-
     date_from = (
         datetime.strptime(args.date_from, "%Y-%m-%d").date() if args.date_from else None
     )
@@ -281,29 +325,24 @@ def main() -> None:
         datetime.strptime(args.date_to, "%Y-%m-%d").date() if args.date_to else None
     )
 
-    src = resolve_history_path(args.browser, args.profile, args.history_db)
-    tmp_db = copy_history_db(src)
-    print(f"History DB copied from: {src}")
-
     try:
-        raw = read_visits(tmp_db)
-        print(f"Rows read: {len(raw)}")
-
-        converted = convert_times(raw, tz)
-        filtered = filter_visits(converted, date_from=date_from, date_to=date_to)
-        print(f"Rows after filtering: {len(filtered)}")
-
-        if not filtered:
+        daily_rows, block_rows, warnings = extract_workhours(
+            browser=args.browser,
+            profile=args.profile,
+            history_db=args.history_db,
+            date_from=date_from,
+            date_to=date_to,
+            timezone_str=args.timezone,
+            gap_minutes=args.gap_minutes,
+        )
+        
+        if not daily_rows:
             print("No visits found after filtering. Nothing to do.")
             return
 
-        print(f"First visit: {filtered[0]['timestamp_local'].strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        print(f"Last visit:  {filtered[-1]['timestamp_local'].strftime('%Y-%m-%d %H:%M:%S %Z')}")
-
-        daily_rows, block_rows = group_daily(filtered, args.gap_minutes)
         print(f"Days summarised: {len(daily_rows)}")
-
-        emit_warnings(daily_rows)
+        for w in warnings:
+            print(f"  {w}")
 
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -331,11 +370,9 @@ def main() -> None:
         print(f"  {daily_path.name}: {len(daily_rows)} days")
         print(f"  {blocks_path.name}: {len(block_rows)} blocks")
 
-    finally:
-        try:
-            shutil.rmtree(tmp_db.parent, ignore_errors=True)
-        except OSError:
-            pass
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

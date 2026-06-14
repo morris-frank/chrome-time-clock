@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chrome-time-clock"
+version = "0.1.0"
+description = "Infer approximate workday start/end from Chrome browser history and plot/merge work hours"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Maurice Frank", email = "maurice.frank@posteo.de" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "matplotlib>=3.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/morris-frank/chrome-time-clock"
+
+[project.scripts]
+chrome-time-clock = "chrome_time_clock.cli:main"
+chrome-workhours = "chrome_time_clock.extractor:main"
+plot-workhours = "chrome_time_clock.plotter:main"
+merge-blocks = "chrome_time_clock.merger:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["chrome_time_clock*"]

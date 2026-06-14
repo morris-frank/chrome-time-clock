@@ -1,18 +1,20 @@
-#!/usr/bin/env python3
 """Merge multiple blocks.csv files, collapsing overlapping intervals."""
 
 import argparse
 import csv
 import sys
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Union
 
 
 def parse_dt(d: str, t: str) -> datetime:
+    """Parse date and time strings into a datetime object."""
     return datetime.strptime(f"{d} {t}", "%Y-%m-%d %H:%M")
 
 
-def load_blocks(paths: list[Path]) -> list[dict]:
+def load_blocks(paths: List[Path]) -> List[Dict[str, Any]]:
+    """Load block records from a list of CSV files."""
     rows = []
     for p in paths:
         with open(p, newline="", encoding="utf-8") as f:
@@ -26,7 +28,8 @@ def load_blocks(paths: list[Path]) -> list[dict]:
     return rows
 
 
-def merge_intervals(rows: list[dict]) -> list[dict]:
+def merge_intervals(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort and merge overlapping or adjacent block intervals."""
     if not rows:
         return []
 
@@ -47,7 +50,8 @@ def merge_intervals(rows: list[dict]) -> list[dict]:
     return merged
 
 
-def write_blocks(rows: list[dict], path: Path) -> None:
+def write_blocks(rows: List[Dict[str, Any]], path: Path) -> None:
+    """Write merged blocks to a CSV file."""
     fieldnames = ["date", "block_start", "block_end", "duration_hours", "n_visits"]
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
@@ -63,8 +67,9 @@ def write_blocks(rows: list[dict], path: Path) -> None:
             })
 
 
-def write_daily(rows: list[dict], path: Path) -> None:
-    by_day: dict[str, list] = {}
+def write_daily(rows: List[Dict[str, Any]], path: Path) -> None:
+    """Derive and write daily summaries from merged blocks to a CSV file."""
+    by_day: Dict[str, List[Dict[str, Any]]] = {}
     for r in rows:
         by_day.setdefault(r["date"], []).append(r)
 
@@ -90,7 +95,27 @@ def write_daily(rows: list[dict], path: Path) -> None:
             })
 
 
-def main() -> None:
+def merge_blocks(
+    files: List[Union[str, Path]],
+    out_blocks: Union[str, Path] = "merged_blocks.csv",
+    out_daily: Union[str, Path] = "merged_daily.csv",
+) -> None:
+    """
+    Programmatic API to merge multiple blocks.csv files and write outputs.
+    """
+    paths = [Path(f) for f in files]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        raise FileNotFoundError(f"Files not found: {', '.join(str(m) for m in missing)}")
+
+    rows = load_blocks(paths)
+    merged = merge_intervals(rows)
+
+    write_blocks(merged, Path(out_blocks))
+    write_daily(merged, Path(out_daily))
+
+
+def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Merge blocks.csv files, collapsing overlapping time intervals."
     )
@@ -98,25 +123,24 @@ def main() -> None:
     p.add_argument("--out-blocks", default="merged_blocks.csv")
     p.add_argument("--out-daily",  default="merged_daily.csv",
                    help="Derive a daily summary from merged blocks")
-    args = p.parse_args()
+    return p.parse_args()
 
-    paths = [Path(f) for f in args.files]
-    missing = [p for p in paths if not p.exists()]
-    if missing:
-        for m in missing:
-            print(f"ERROR: file not found: {m}", file=sys.stderr)
+
+def main() -> None:
+    args = parse_args()
+
+    try:
+        merge_blocks(
+            files=args.files,
+            out_blocks=args.out_blocks,
+            out_daily=args.out_daily,
+        )
+        print(f"Successfully merged {len(args.files)} file(s).")
+        print(f"Written: {args.out_blocks}")
+        print(f"Written: {args.out_daily}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
-    rows = load_blocks(paths)
-    print(f"Blocks loaded: {len(rows)} from {len(paths)} file(s)")
-
-    merged = merge_intervals(rows)
-    print(f"Blocks after merge: {len(merged)}")
-
-    write_blocks(merged, Path(args.out_blocks))
-    write_daily(merged, Path(args.out_daily))
-    print(f"Written: {args.out_blocks}")
-    print(f"Written: {args.out_daily}")
 
 
 if __name__ == "__main__":
