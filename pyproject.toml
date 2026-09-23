@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "chrome-time-clock"
 version = "0.1.0"
-description = "Infer approximate workday start/end from Chrome browser history and plot/merge work hours"
+description = "Infer workday start and end from Chrome, Chromium or Brave history, then plot or merge the hours."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -27,6 +27,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/morris-frank/chrome-time-clock"
+Issues = "https://github.com/morris-frank/chrome-time-clock/issues"
 
 [project.scripts]
 chrome-time-clock = "chrome_time_clock.cli:main"

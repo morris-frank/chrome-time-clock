@@ -5,19 +5,20 @@
 <p>
   <sub>YOUR BROWSER ALREADY KEPT THE TIMESHEET</sub>
   <br>
-  <strong>Infer workday start and end from Chrome history, then plot or merge the hours.</strong>
+  <strong>Infer workday start and end from Chrome, Chromium or Brave history, then plot or merge the hours.</strong>
   <br>
   <br>
-  <img src="https://img.shields.io/badge/python-%E2%89%A53.9-8EDE3D?style=flat-square&amp;labelColor=16211B" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/browsers-Chrome%20%C2%B7%20Chromium%20%C2%B7%20Brave-8EDE3D?style=flat-square&amp;labelColor=16211B" alt="Chrome, Chromium, Brave">
-  <img src="https://img.shields.io/badge/OS-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-1AB172?style=flat-square&amp;labelColor=16211B" alt="macOS, Windows, Linux">
-  <img src="https://img.shields.io/badge/license-MIT-1AB172?style=flat-square&amp;labelColor=16211B" alt="MIT license">
+  <a href="https://pypi.org/project/chrome-time-clock/"><img src="https://img.shields.io/pypi/v/chrome-time-clock?style=flat-square&amp;color=3775A9&amp;logo=pypi&amp;logoColor=white&amp;labelColor=2D2825" alt="PyPI version"></a>
+  <img src="https://img.shields.io/badge/python-%E2%89%A53.9-D78A7A?style=flat-square&amp;labelColor=2D2825" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/browsers-Chrome%20%C2%B7%20Chromium%20%C2%B7%20Brave-D78A7A?style=flat-square&amp;labelColor=2D2825" alt="Chrome, Chromium, Brave">
+  <img src="https://img.shields.io/badge/OS-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-7E9688?style=flat-square&amp;labelColor=2D2825" alt="macOS, Windows, Linux">
+  <img src="https://img.shields.io/badge/license-MIT-7E9688?style=flat-square&amp;labelColor=2D2825" alt="MIT license">
 </p>
 
 <br clear="left">
 
 ```sh
-pip install -e .
+uv tool install chrome-time-clock                      # or: pipx install chrome-time-clock
 chrome-time-clock extract --out ./export --markdown     # history → daily_summary.csv (+ .md)
 chrome-time-clock plot ./export/daily_summary.csv       # timeline + histograms, .png and .pdf
 chrome-time-clock merge laptop.csv desktop.csv          # union of blocks across machines
