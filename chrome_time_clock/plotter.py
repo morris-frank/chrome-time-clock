@@ -1,4 +1,4 @@
-"""Work-hours timelines + histograms in dark Soilytix style."""
+"""Work-hours timelines + histograms in light Soilytix style."""
 
 import argparse
 import csv
@@ -8,29 +8,27 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# ── Soilytix dark palette ─────────────────────────────────────────────────────
+# ── Soilytix light chart palette (DESIGN.md § Charts) ────────────────────────
 
 C = {
-    "fig_bg":    "#111614",
-    "axes_bg":   "#161e1b",
-    "text":      "#fdfefc",
-    "muted":     "#837e75",
-    "dimmed":    "#7d7a75",
-    "border":    "#2a3a34",
-    "grid":      "#1d2b26",
-    "primary":   "#00ff87",   # mint  — weekly line
-    "secondary": "#86eb22",   # lime  — daily bars / histograms
-    "red":       "#b14117",
-    "blue":      "#1a4f8a",
-    "cyan":      "#0f7a65",
-    "weekend":   "#0c1410",   # darker strip for Sat/Sun
+    "fig_bg":      "#FFFFFF",   # reports sit on white
+    "axes_bg":     "#FFFFFF",
+    "text":        "#29332E",   # ink
+    "muted":       "#6D7471",   # ink-muted / chart-context
+    "border":      "#CED0CF",   # border-default
+    "grid":        "#E5E5E0",   # chart-grid
+    "subject":     "#8EDE3D",   # Lime — daily bars / histograms
+    "comparison":  "#B48240",   # Gold — weekly line
+    "comparison_ink": "#8C5A01",  # cat-gold-ink — gold-axis text
+    "weekend":     "#F5F6F6",   # surface-page strip for Sat/Sun
 }
 
+# Peers take register A (never green); min/max are context.
 STAT_COLORS = {
-    "min":    C["blue"],
-    "max":    C["red"],
-    "mean":   C["cyan"],
-    "median": C["muted"],
+    "min":    "#A5A9A7",
+    "max":    "#A5A9A7",
+    "mean":   "#CA8407",
+    "median": "#2998ED",
 }
 
 # ── Load ──────────────────────────────────────────────────────────────────────
@@ -108,11 +106,11 @@ def date_range_all(rows: List[Dict[str, Any]]) -> List[datetime]:
 # ── Theme helpers ─────────────────────────────────────────────────────────────
 
 def apply_style() -> None:
-    """Apply the custom Soilytix dark stylesheet to matplotlib."""
+    """Apply the Soilytix light chart stylesheet to matplotlib."""
     import matplotlib.pyplot as plt
     plt.rcParams.update({
         "font.family":      "sans-serif",
-        "font.sans-serif":  ["Inter", "Aptos", "Helvetica Neue", "Arial"],
+        "font.sans-serif":  ["Inter", "Inter Variable", "Helvetica Neue", "Arial"],
         "figure.facecolor": C["fig_bg"],
         "axes.facecolor":   C["axes_bg"],
         "text.color":       C["text"],
@@ -141,7 +139,7 @@ def dress_axes(ax: Any, xlabel: str = "", ylabel: str = "") -> None:
 
 
 def shade_weekends(ax: Any, all_dts: List[datetime]) -> None:
-    """Shade weekend days with a darker background strip."""
+    """Shade weekend days with a light background strip."""
     for dt in all_dts:
         if dt.weekday() >= 5:           # 5=Sat, 6=Sun
             ax.axvspan(dt - timedelta(hours=12), dt + timedelta(hours=12),
@@ -165,9 +163,9 @@ def stat_box(ax: Any, values: List[float]) -> None:
     ax.text(
         0.97, 0.97, box_text,
         transform=ax.transAxes, ha="right", va="top",
-        fontsize=8, fontfamily="monospace", color=C["text"],
+        fontsize=8, fontfamily=["IBM Plex Mono", "monospace"], color=C["text"],
         bbox=dict(boxstyle="round,pad=0.4", facecolor=C["fig_bg"],
-                  edgecolor=C["primary"], linewidth=0.9, alpha=0.95),
+                  edgecolor=C["border"], linewidth=0.9, alpha=0.95),
         zorder=5,
     )
 
@@ -185,21 +183,21 @@ def plot_timeline(ax: Any, rows: List[Dict[str, Any]]) -> None:
     daily_dates, daily_hours = daily_series(rows, weekdays_only=False)
     weekly_dates, weekly_hours = weekly_series(rows, weekdays_only=False)
 
-    # Daily bars (lime, left axis)
+    # Daily bars (Lime subject, left axis)
     ax.bar(daily_dates, daily_hours,
-           color=C["secondary"], alpha=0.78, width=0.72, zorder=2,
+           color=C["subject"], alpha=0.78, width=0.72, zorder=2,
            label="Daily active h")
     dress_axes(ax, ylabel="Active hours (day)")
 
-    # Weekly line (mint, right axis)
+    # Weekly line (Gold comparison, right axis)
     ax_w = ax.twinx()
     ax_w.plot(weekly_dates, weekly_hours,
-              color=C["primary"], linewidth=2.0, marker="o", markersize=5,
-              markerfacecolor=C["primary"], markeredgecolor=C["fig_bg"],
+              color=C["comparison"], linewidth=2.0, marker="o", markersize=5,
+              markerfacecolor=C["comparison"], markeredgecolor=C["fig_bg"],
               markeredgewidth=1.4, zorder=3, label="Weekly total h")
-    ax_w.tick_params(colors=C["primary"], labelsize=8)
-    ax_w.set_ylabel("Active hours (week)", fontsize=8.5, color=C["primary"])
-    ax_w.spines["right"].set_edgecolor(C["primary"])
+    ax_w.tick_params(colors=C["comparison_ink"], labelsize=8)
+    ax_w.set_ylabel("Active hours (week)", fontsize=8.5, color=C["comparison_ink"])
+    ax_w.spines["right"].set_edgecolor(C["comparison"])
     for s in ("top", "left", "bottom"):
         ax_w.spines[s].set_visible(False)
     ax_w.grid(False)
@@ -255,7 +253,7 @@ def plot_histogram(ax: Any, values: List[float],
 
     n_bins = min(bins, max(5, len(values) // 2))
     ax.hist(values, bins=n_bins,
-            color=C["secondary"], edgecolor=C["axes_bg"],
+            color=C["subject"], edgecolor=C["axes_bg"],
             linewidth=0.6, alpha=0.88, zorder=2)
     dress_axes(ax, xlabel=xlabel, ylabel="Count")
     ax.set_title(title, fontsize=9.5, color=C["text"], pad=6, fontweight="bold")
@@ -341,7 +339,7 @@ def plot_workhours(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Work-hour timelines and histograms in dark Soilytix style."
+        description="Work-hour timelines and histograms in light Soilytix style."
     )
     p.add_argument("csv",              help="daily summary CSV")
     p.add_argument("--from", dest="date_from", default="2026-02-22")

@@ -43,7 +43,7 @@ Groups history visits into active blocks, split wherever the gap exceeds `--gap-
 
 ## Plot
 
-Dark-theme timeline and start/end histograms from `daily_summary.csv`.
+Timeline and start/end histograms from `daily_summary.csv`.
 
 | Option | Default | |
 |---|---|---|

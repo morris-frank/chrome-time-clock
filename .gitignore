@@ -2,3 +2,6 @@ dist/
 build/
 *.egg-info/
 __pycache__/
+
+# personal browsing-derived hours; repo is public
+data/
